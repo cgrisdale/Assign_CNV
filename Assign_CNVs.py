@@ -78,29 +78,61 @@ def Read_in_GTF(gtf):
 
 def Compare_ranges(cnvlist,gtfd):
   '''Go through list of CNV dict, compare to gene coordinate (dict of dict's), count frequency of recurrence'''
-  cnvl,tmp,genes,types,samples=[],[],[],[],[]
+  cnvl,genes,types,samples={},[],[],[]
+  tmp=[0,xrange(1),1,'gain','test','gene1','ENSG00000'] #need initial values to avoid IndexError on first round through loop
 
   #Go through all CNV lines; list of lists
-  for x in cnvlist:
-    chrm,cnvr,cpn,etype,filen=x[0:]
+  for x in range(len(cnvlist)):
+    chrm,cnvr,cpn,etype,filen=cnvlist[x][0:]
 
-    #Go through gtfd for current chromosome
+    #Go through gtfd for current chromosome, key=xrange
     for i in gtfd[chrm]:
+
       if range(max(cnvr[0],i[0]),min(cnvr[-1],i[-1])+1): #range matches range key
         #ranges overlap, make note of gene matching cnv region
         genen,ensid=gtfd[chrm][i][3],gtfd[chrm][i][4]
-        tmp=[chrm,cnvr,cpn,etype,filen,genen,ensid]
-        cnvl.append(tmp)
-        genes.append(genen)
-        types.append(etype) #gain or loss
-        samples.append(filen)
 
-  print Counter(types),'\n'
+        if cnvr!=tmp[1]: #first match for this CNV
+          types.append(etype) #gain or loss
+          samples.append(filen)
+
+        #currentoverlap=range(max(cnvr[0],i[0]),min(cnvr[-1],i[-1])+1)
+        #for k,v in cnvl[chrm].items():
+        #  if genen in v[5] and filen==v[2]: #gene already in dict and sample name the same
+        #    newoverlap=range(max(cnvr[0],k[0]),min(cnvr[-1],k[-1])+1)
+        #    if currentoverlap>newoverlap: #which CNV to GTF overlap is bigger
+
+        tmp=[chrm,cnvr,cpn,etype,filen,[genen],ensid]
+        cnvl=Append_genenames(cnvl,cnvr,genen,tmp)
+        #cnvl.append(tmp)
+        genes.append(genen)
+
+  print '\t'.join([k+': '+str(v) for k,v in Counter(types).items()]),'\n'
   print Counter(samples).most_common(10),'\n'
   print Counter(genes).most_common(10)
 
   return cnvl
 
+def Append_genenames(cnvd,cnvrange,genename,tmpl):
+  #
+  if tmpl[0] in cnvd: #if chrom is in dict, check if range is in dict[chrom]
+    pass
+
+  else: #initialize dict for this chrom and add current range with value to internal dict
+    cnvd[tmpl[0]]={}
+    cnvd[tmpl[0]][cnvrange]=tmpl
+    return cnvd
+
+  if cnvrange in cnvd[tmpl[0]]: #if CNV range/event already in dict[chrom]
+    cnvd[tmpl[0]][cnvrange][5].append(genename) #index 5 is list of gene names
+
+  else: #if cnvrange/key not in dict
+    cnvd[tmpl[0]][cnvrange]=tmpl
+
+  return cnvd
+
+#def Count_recurrence():
+#Need to find most common overlapping regions, output in descending order of recurrence
 
 if __name__ == "__main__":
 
@@ -125,8 +157,23 @@ if __name__ == "__main__":
 
   c=Compare_ranges(QL,gtfd)
 
-  outf=open('CNV.outfile.tsv', 'w')
-
+  outf=open('CNV.outfile1.tsv', 'w')
+  y=0
+  for l,m in c.items():
+    #y+=1
+    #print k,v
+    #if y>9:
+    #  sys.exit(0)
+    for k,v in m.items():
+      tmpx=[v[0],v[1][0],v[1][-1],v[2],v[3],v[4],v[6]]
+      genec=len(v[5])
+      genenm=';'.join(str(z) for z in v[5])
+      tmpx.append(genec) #append gene count and string of gene names separated by ;
+      tmpx.append(genenm)
+      myline='\t'.join(str(y) for y in tmpx)
+      outf.write(myline)
+      outf.write('\n')
+  outf.close()
 
 
 
