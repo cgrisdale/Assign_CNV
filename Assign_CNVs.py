@@ -78,7 +78,7 @@ def Read_in_GTF(gtf):
 
 def Compare_ranges(cnvlist,gtfd):
   '''Go through list of CNV dict, compare to gene coordinate (dict of dict's), count frequency of recurrence'''
-  cnvl,genes,types,samples={},[],[],[]
+  cnvl,genes,types,samples,geneslist={},{},[],[],[]
   tmp=[0,xrange(1),1,'gain','test','gene1','ENSG00000'] #need initial values to avoid IndexError on first round through loop
 
   #Go through all CNV lines; list of lists
@@ -96,38 +96,101 @@ def Compare_ranges(cnvlist,gtfd):
           types.append(etype) #gain or loss
           samples.append(filen)
 
-        #currentoverlap=range(max(cnvr[0],i[0]),min(cnvr[-1],i[-1])+1)
-        #for k,v in cnvl[chrm].items():
-        #  if genen in v[5] and filen==v[2]: #gene already in dict and sample name the same
-        #    newoverlap=range(max(cnvr[0],k[0]),min(cnvr[-1],k[-1])+1)
-        #    if currentoverlap>newoverlap: #which CNV to GTF overlap is bigger
-
-        tmp=[chrm,cnvr,cpn,etype,filen,[genen],ensid]
-        cnvl=Append_genenames(cnvl,cnvr,genen,tmp)
+        #Make dict for genes with their overlap size so they can be checked when there are duplicates etc.
+        #The duplicate genes will be in different ranges! Need to check against other ranges with same genename.
+        generange=range(max(cnvr[0],i[0]),min(cnvr[-1],i[-1])+1)
+        tmp=[chrm,cnvr,cpn,etype,filen,genen,ensid]
+        cnvl=Append_genenames(cnvl,cnvr,genen,generange,tmp)
         #cnvl.append(tmp)
-        genes.append(genen)
+
+        #Use dict for gene counts
+        if genen in genes: #
+          if filen in genes[genen]:
+            pass #gene already exists with current sample name
+          else:
+            genes[genen].append(filen)
+        else: #First time genename is added to dict, along with current sample name
+          genes[genen]=[filen]
 
   print '\t'.join([k+': '+str(v) for k,v in Counter(types).items()]),'\n'
   print Counter(samples).most_common(10),'\n'
-  print Counter(genes).most_common(10)
+  #for k,v in genes.items(): #Go through dict of genes with samples as values
+  #  for i in range(len(v)): #For each sample in value, add genename to list for counting
+  #    geneslist.append(k)
+  #print Counter(geneslist).most_common(10)
 
   return cnvl
 
-def Append_genenames(cnvd,cnvrange,genename,tmpl):
+def Gene_match(cnvdg,currange,genenameg,generangeg,tmplg): #generangeg=overlap
+  '''Check for gene name duplicates for same sample/file name, return cnvdict'''
+  templg,delcount=[],0
+  for l,m in cnvdg[tmplg[0]].items(): #Loop through cnvdict[chrm] to find any matches of gene name in any range/key
+    if genenameg in m[5] and tmplg[4]==m[4]: #if genename in any ranges genedict (ie. list[5]) for the same sample/filen
+      if generangeg > m[5][genenameg]: #if new overlap range is larger, replace, otherwise continue
+        #Assign gene to current range and delete from previous range
+        del cnvdg[tmplg[0]][l][5][genenameg]
+        delcount+=1
+        if delcount > 1: #should not be deleting more than one duplicate
+          sys.exit("Trying to delete more than one duplicate in Gene_match(), should not be possible")
+        #generd=cnvdg[tmplg[0]][currange][5] #gene:range dict for current gene NOT current l,m
+        #generd[genenameg]=generangeg #add current gene
+        #templg=[tmplg[0],tmplg[1],tmplg[2],tmplg[3],tmplg[4],generd,tmplg[6]]
+        #cnvdg[tmplg[0]][currange]=templg
+        #return cnvdg
+      else:
+        #Previous overlap is at least as long as current, do nothing
+        pass #or break because I should only find a match once?
+    else:
+      #Genename not found in current entry
+      pass
+
+  #If no matching genename and sample were found while looping through cnvdict
+  if currange in cnvdg[tmplg[0]]: #range key present, then we're just adding a gene to innermost dict
+    cnvdg[tmplg[0]][currange][5][genenameg]=generangeg
+
+  else: #add range key for first time
+    generd={}
+    generd[genenameg]=generangeg
+    templg=[tmplg[0],tmplg[1],tmplg[2],tmplg[3],tmplg[4],generd,tmplg[6]]
+    cnvdg[tmplg[0]][currange]=templg
+
+  return cnvdg
+
+def Append_genenames(cnvd,cnvrange,genename,generange,tmpl):
   #
+  templ=[]
+
   if tmpl[0] in cnvd: #if chrom is in dict, check if range is in dict[chrom]
     pass
 
   else: #initialize dict for this chrom and add current range with value to internal dict
-    cnvd[tmpl[0]]={}
-    cnvd[tmpl[0]][cnvrange]=tmpl
+    cnvd[tmpl[0]],generd={},{}
+
+    #Create gene,range dict
+    generd[genename]=generange
+    templ=[tmpl[0],tmpl[1],tmpl[2],tmpl[3],tmpl[4],generd,tmpl[6]]
+    cnvd[tmpl[0]][cnvrange]=templ
     return cnvd
 
-  if cnvrange in cnvd[tmpl[0]]: #if CNV range/event already in dict[chrom]
-    cnvd[tmpl[0]][cnvrange][5].append(genename) #index 5 is list of gene names
+#  if cnvrange in cnvd[tmpl[0]]: #if CNV range/event already in dict[chrom]
+#    generd=cnvd[tmpl[0]][cnvrange][5]
+  cnvd=Gene_match(cnvd,cnvrange,genename,generange,tmpl)
+#    if genename in generd:
+#      #Compare ranges
+#      if generange > generd[genename]: #if new overlap range is larger, replace, otherwise continue
+#        generd[genename]=generange
+#    else: #generd exists, but genename not in it yet
+#      generd[genename]=generange
+    #After adding genename to generd, add tmpl list to cnvd
+#    templ=[tmpl[0],tmpl[1],tmpl[2],tmpl[3],tmpl[4],generd,tmpl[6]]
+#    cnvd[tmpl[0]][cnvrange]=templ
+    #cnvd[tmpl[0]][cnvrange][5].append(genename) #index 5 is list of gene names
 
-  else: #if cnvrange/key not in dict
-    cnvd[tmpl[0]][cnvrange]=tmpl
+#  else: #if cnvrange/key not in dict, then generd doesn't exist yet for this entry
+#    generd={}
+#    generd[genename]=generange
+#    templ=[tmpl[0],tmpl[1],tmpl[2],tmpl[3],tmpl[4],generd,tmpl[6]]
+#    cnvd[tmpl[0]][cnvrange]=templ
 
   return cnvd
 
@@ -174,6 +237,7 @@ if __name__ == "__main__":
       outf.write(myline)
       outf.write('\n')
   outf.close()
+
 
 
 
